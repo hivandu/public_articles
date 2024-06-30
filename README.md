@@ -1,6 +1,6 @@
 # Public Articles
 
-用于公开文章的文章代码，有问题可联系[茶桁](mailto:doo@hivan.me)
+用于公开文章的文章代码，有问题可联系[茶桁](https://hivan.me)或关注公众号「坍缩的奇点」留言。
 
 ## 可见零散文章列表
 
