@@ -13,8 +13,8 @@
 | 文章               | 代码                      | 说明                                           |
 | ------------------ | ------------------------- | ---------------------------------------------- |
 | [「特征工程的力量」](https://mp.weixin.qq.com/s/OvJA094xt0yr8b2F0DubMA) | feature_engineering.ipynb | 在非线性数据集上比较逻辑回归和 NN 分类器的性能 |
-|                    |                           |                                                |
-|                    |                           |                                                |
+| [「使用高斯混合模型识别餐厅热点」](https://mp.weixin.qq.com/s/p8FEWwlQV2JiLC9NlH9LSA) |   gmm_restaurant.ipynb    | 使用 GMM 识别加拿大多伦多的直观餐厅集群 |
+| **可视化数据的分类能力** | pca_visualisation.ipynb | 使用 PCA 探索数据对类的分离程度 |
 
 
 
