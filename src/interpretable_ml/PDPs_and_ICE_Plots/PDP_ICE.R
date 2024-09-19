@@ -23,8 +23,8 @@ rf = randomForest(x = dataset[0:5],
                   y = dataset$price,
                   ntree = 100)
 
-#Binary target variable 
-#Create binary target variable 
+# Binary target variable 
+# Create binary target variable 
 mean_price = mean(dataset$price)
 price_binary = as.integer(dataset$price > mean_price)
 price_binary = factor(price_binary, levels = c(0, 1))
@@ -41,7 +41,7 @@ rf_binary = randomForest(x = dataset[0:5],
 
 require(ICEbox)
 
-#PDP
+# PDP
 iceplot = ice(object = rf, 
               X = dataset[0:5], 
               y = dataset$price, 
@@ -52,7 +52,7 @@ plot(iceplot,
      colorvec = '000000')
 dev.off()
 
-#ICE Plot
+# ICE Plot
 jpeg('R_code_2.jpg',width = 800, height = 600, res=150)
 plot(iceplot, 
      frac_to_plot = 0.1, 
@@ -61,7 +61,7 @@ plot(iceplot,
      color_by = "car_type")
 dev.off()
 
-#Derivative PDP
+# Derivative PDP
 iceplot = ice(object = rf, 
               X = dataset[0:5], 
               y = dataset$price, 
@@ -75,7 +75,7 @@ plot(dice,
      plot_sd=F)
 dev.off()
 
-#Binary target variable 
+# Binary target variable 
 iceplot = ice(object = rf_binary, 
               X = dataset[0:5], 
               predictor = "car_age",
@@ -155,5 +155,3 @@ dev.off()
 jpeg('R_code_12.jpg',width = 800, height = 600, res=150)
 vip(rf, method = "firm",ice = TRUE)
 dev.off()
-
-
