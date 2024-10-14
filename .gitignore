@@ -6,3 +6,4 @@
 *.code-workspace
 figures/
 dataset/
+src/canny_edge_detector/image_alignment_task.ipynb
