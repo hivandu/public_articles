@@ -111,7 +111,8 @@ class data_processor:
             return img
 
 
-    def canny_ed(self,img_input, threshold1=100, threshold2=200):
+    def canny_ed(self, img_input, threshold1=100, threshold2=200):
+        print(img_input)
 
         """Apply canny edge detection to image"""
         
