@@ -1,3 +1,9 @@
+<!--
+ * @Author: Hivan Du
+ * @mail: doo@hivan.me
+ * @LastEditors: Hivan Du
+ * @LastEditTime: 2024-12-13 22:16:54
+-->
 # Public Articles
 
 用于公开文章的文章代码，有问题可联系[茶桁](https://hivan.me)或关注公众号「坍缩的奇点」留言。
@@ -23,3 +29,4 @@
 
 ## 可见系列文章列表
 
+![三节课海报.pic](https://cdn.jsdelivr.net/gh/hivandu/notes/img/三节课海报.pic.jpg)
