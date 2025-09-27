@@ -1,0 +1,116 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: us-east-1
+    AWS_ACCOUNT_ID: "473344230259"
+    ECR_REPOSITORY_NAME: my-app
+    LAMBDA_FUNCTION_NAME: my-app
+    IMAGE_REPO_NAME: my-app
+
+  # parameter-store:
+  #   # DOCKER_REGISTRY_URL: /myapp/docker/registry/url
+  #   # DATABASE_URL: /myapp/database/url
+
+  # secrets-manager:
+  #   # DB_PASSWORD: prod/myapp/db:password
+  #   # API_KEY: prod/myapp/api:key
+
+phases:
+  pre_build:
+    commands:
+      # login to ecr
+      - echo "=== Pre-build Phase Started ==="
+      - AWS_ACCOUNT_ID=$(echo $CODEBUILD_BUILD_ARN | cut -d':' -f5)
+      - ECR_REGISTRY="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"
+      - echo "... getting ecr login password..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION > /tmp/ecr_password
+      - echo "... logging in to ECR ..."
+      - cat /tmp/ecr_password | docker login --username AWS --password-stdin $ECR_REGISTRY
+      - echo "... ecr login successful ..."
+      - rm /tmp/ecr_password
+      - REPOSITORY_URI="$ECR_REGISTRY/$ECR_REPOSITORY_NAME"
+
+      # use github sha or codebuild commit hash for image tag
+      - |
+        if [ -n "$GITHUB_SHA" ]; then
+          COMMIT_HASH=$(echo $GITHUB_SHA | cut -c 1-7)
+          echo "Using GitHub SHA: $GITHUB_SHA"
+        else
+          COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+          echo "Using CodeBuild SHA: $CODEBUILD_RESOLVED_SOURCE_VERSION"
+        fi
+      - IMAGE_TAG="${COMMIT_HASH:-latest}"
+
+      # store image tag in aws system manager param store (retrieve it in the deploy phase)
+      - |
+        aws ssm put-parameter --name "/my-app/image-tag" --value "$IMAGE_TAG" --type "String" --overwrite
+
+      # create or retrieve ecr repo
+      - |
+        aws ecr describe-repositories --repository-names $ECR_REPOSITORY_NAME --region $AWS_DEFAULT_REGION || \
+        aws ecr create-repository --repository-name $ECR_REPOSITORY_NAME --region $AWS_DEFAULT_REGION
+
+  build:
+    commands:
+      - echo "=== Build Phase Started ==="
+      # build docker image
+      - echo "... building the docker image ..."
+      - docker build --platform linux/amd64 --provenance=false -f Dockerfile.lambda.production -t my-app:$IMAGE_TAG .
+      # - docker buildx create --use --name lambda-builder || true # use buildx for architecture control
+      # - docker buildx build --platform linux/amd64 --provenance=false --load -f Dockerfile.lambda.production -t my-app:$IMAGE_TAG .
+
+      # show image details
+      - echo "... docker images built:"
+      - docker images | grep $ECR_REPOSITORY_NAME
+
+  post_build:
+    commands:
+      - echo "=== Post-build Phase Started ==="
+      - echo "... build completed on $(date) ..."
+
+      # push images to ecr
+      - echo "... pushing docker images to ecr ..."
+      - docker tag my-app:$IMAGE_TAG $REPOSITORY_URI:$IMAGE_TAG
+      - docker push ${REPOSITORY_URI}:${IMAGE_TAG}
+      - echo "... images pushed successfully ..."
+
+      # update lambda function (only for deploy builds)
+      - |
+        if [ "$BUILD_TYPE" = "deploy" ]; then
+          echo "... updating lambda function ..."
+          aws lambda update-function-code \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --image-uri $REPOSITORY_URI:$IMAGE_TAG \
+            --region $AWS_DEFAULT_REGION
+
+          echo "... waiting for Lambda update to complete ..."
+          aws lambda wait function-updated \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --region $AWS_DEFAULT_REGION
+
+          UPDATED_IMAGE=$(aws lambda get-function \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --region $AWS_DEFAULT_REGION \
+            --query 'Code.ImageUri' --output text)
+
+        elif [ "$BUILD_TYPE" = "test" ]; then
+          echo "... test build completed - skipping lambda deployment ..."
+        else
+          echo "... build type not specified - skipping lambda deployment"
+        fi
+
+      # # temp debug
+      # - echo "=== Debugging Container Contents ==="
+      # - docker run --entrypoint="/bin/ls" my-app:latest -R /app
+      # - echo "=== End Debugging ==="
+
+artifacts:
+  files:
+    - '**/*'
+  name: ml-sales-prediction-$(date +%Y-%m-%d)
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'
+    - 'node_modules/**/*'

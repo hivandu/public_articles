@@ -1,0 +1,118 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  API_ENDPOINT: ${{ secrets.API_ENDPOINT }}
+  CLIENT_A: ${{ secrets.CLIENT_A }}
+
+
+# set permissions for oicd (open id connect) authentication with aws
+permissions:
+  id-token: write  # for requesting the jwt token from GitHub's OIDC provider.
+  contents: read   # for checking out the code in the repo
+  security-events: write
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # preparation
+      - name: checkout repository code
+        uses: actions/checkout@v4
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements_dev.txt
+
+      # testing
+      - name: run pytest
+        run: pytest
+        env:
+          CORS_ORIGINS: 'http://localhost:3000,http://127.0.0.1:3000'
+          PYTEST_RUN: true
+
+      # static analysis and dependency scanning with snyk
+      - name: run snyk sast
+        uses: snyk/actions/python@master
+        with:
+          command: test
+          args: --severity-threshold=high --policy-path=.synk --python-version=3.12 --skip-unresolved --file=requirements.txt
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: run snyk sca
+        uses: snyk/actions/python@master
+        with:
+          command: code test
+          args: --severity-threshold=high --policy-path=.synk --python-version=3.12 --skip-unresolved --file=requirements.txt
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      # config aws credentials using oidc
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION_NAME }}
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }} # iam role for github actions
+          role-session-name: GitHubActions-Build-Test-${{ github.run_id }}
+
+      - name: test aws access
+        run: |
+          aws sts get-caller-identity
+          echo "✅ oidc authentication successful"
+
+      # building - trigger aws codebuild to start the project named  ${{ secrets.CODEBUILD_PROJECT }}
+      - name: trigger aws codebuild
+        uses: aws-actions/aws-codebuild-run-build@v1
+        id: codebuild
+        with:
+          project-name: ${{ secrets.CODEBUILD_PROJECT }}
+          source-version-override: ${{ github.sha }}
+          env-vars-for-codebuild: | # pass the env vars to buildspec.yml. set BUILD_TYPE as test not to trigger the deployment
+            GITHUB_SHA=${{ github.sha }},
+            BUILD_TYPE=test,
+            AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }},
+            AWS_DEFAULT_REGION=${{ secrets.AWS_REGION_NAME }}
+
+      - name: check codebuild status
+        if: always()
+        run: |
+          BUILD_ID="${{ steps.codebuild.outputs.aws-build-id }}"
+          echo "codebuild id: $BUILD_ID"
+
+          BUILD_STATUS=$(aws codebuild batch-get-builds --ids "$BUILD_ID" \
+            --query 'builds[0].buildStatus' --output text)
+          echo "build status: $BUILD_STATUS"
+
+          aws codebuild batch-get-builds --ids "$BUILD_ID" \
+            --query 'builds[0].phases[].{Phase:phaseType,Status:phaseStatus,Duration:durationInSeconds}' \
+            --output table
+
+          if [ "$BUILD_STATUS" != "SUCCEEDED" ]; then
+            echo "❌ codebuild failed with status: $BUILD_STATUS"
+            exit 1
+          else
+            echo "✅ codebuild completed successfully"
+          fi
+
+      - name: upload build artifacts
+        if: always()
+        run: |
+          echo "build completed for commit: ${{ github.sha }}"
+          echo "branch: ${{ github.ref_name }}"
+          echo "build ID: ${{ steps.codebuild.outputs.aws-build-id }}"
